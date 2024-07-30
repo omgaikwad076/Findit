@@ -6,4 +6,6 @@ interface CartListener {
 
     fun savingCartItemCount(itemCount : Int)
 
+    fun hideCartLayout()
+
 }

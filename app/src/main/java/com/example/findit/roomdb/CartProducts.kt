@@ -18,5 +18,6 @@ data class CartProducts(
     var productImage: String ? = null,
     var productCategory: String ? = null,
     var adminUid: String? = null,
+//    var productType : String ?= null
 )
 

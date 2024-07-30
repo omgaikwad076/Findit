@@ -7,6 +7,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import com.example.findit.Utils
+import com.example.findit.models.Orders
 import com.example.findit.models.Product
 import com.example.findit.roomdb.CartProductDao
 import com.example.findit.roomdb.CartProductDatabase
@@ -22,112 +23,135 @@ import kotlinx.coroutines.flow.callbackFlow
 
 class UserViewModel(application: Application) : AndroidViewModel(application) {
 
-    // Initialization
-    val sharedPreferences : SharedPreferences = application.getSharedPreferences("My_Pref", MODE_PRIVATE)
-    val cartProductDao : CartProductDao = CartProductDatabase.getDatabaseInstance(application).cartsProductsDao()
+    private val sharedPreferences: SharedPreferences = application.getSharedPreferences("My_Pref", MODE_PRIVATE)
+    private val cartProductDao: CartProductDao = CartProductDatabase.getDatabaseInstance(application).cartsProductsDao()
     private val _paymentStatus = MutableStateFlow<Boolean>(false)
     val paymentStatus = _paymentStatus
 
     // Room DB
-    suspend fun insertCartProduct(products : CartProducts){
+    suspend fun insertCartProduct(products: CartProducts) {
         cartProductDao.insertCartProduct(products)
     }
 
-    fun getAll() : LiveData<List<CartProducts>>{
+    fun getAll(): LiveData<List<CartProducts>> {
         return cartProductDao.getAllCartProducts()
     }
 
-    suspend fun updateCartProduct(products : CartProducts){
+    fun deleteCartProducts() {
+        cartProductDao.deleteCartProducts()
+    }
+
+    suspend fun updateCartProduct(products: CartProducts) {
         cartProductDao.updateCartProduct(products)
     }
 
-    suspend fun deleteCartProduct(productId : String){
+    suspend fun deleteCartProduct(productId: String) {
         cartProductDao.deleteCartProduct(productId)
     }
 
     // Firebase call
-    fun fetchAllTheProducts(): Flow<List<Product>> = callbackFlow{
+    fun fetchAllTheProducts(): Flow<List<Product>> = callbackFlow {
         val db = FirebaseDatabase.getInstance().getReference("Admins").child("AllProducts")
 
         val eventListener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
                 val products = ArrayList<Product>()
-                for(product in snapshot.children){
+                for (product in snapshot.children) {
                     val prod = product.getValue(Product::class.java)
-                    products.add(prod!!)
-
-
+                    prod?.let { products.add(it) }
                 }
                 trySend(products)
             }
 
             override fun onCancelled(error: DatabaseError) {
-                TODO("Not yet implemented")
+                // Handle error
             }
-
         }
         db.addValueEventListener(eventListener)
-
         awaitClose { db.removeEventListener(eventListener) }
     }
-    fun onCategoryIconClicked(category : String) : Flow<List<Product>> = callbackFlow{
+
+    fun onCategoryIconClicked(category: String): Flow<List<Product>> = callbackFlow {
         val db = FirebaseDatabase.getInstance().getReference("Admins").child("ProductCategory/${category}")
 
-        val eventListener = object : ValueEventListener{
+        val eventListener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
                 val products = ArrayList<Product>()
-                for(product in snapshot.children){
+                for (product in snapshot.children) {
                     val prod = product.getValue(Product::class.java)
-                    products.add(prod!!)
-
-
+                    prod?.let { products.add(it) }
                 }
                 trySend(products)
-
             }
 
             override fun onCancelled(error: DatabaseError) {
-                TODO("Not yet implemented")
+                // Handle error
             }
-
         }
         db.addValueEventListener(eventListener)
-
         awaitClose { db.removeEventListener(eventListener) }
-
     }
 
-    fun updateItemCount(product: Product, itemCount: Int){
-        FirebaseDatabase.getInstance().getReference("Admins").child("AllProducts/${product.productRandomId}").child("itemCount").setValue(itemCount)
-        FirebaseDatabase.getInstance().getReference("Admins").child("ProductCategory/${product.productCategory}/${product.productRandomId}").child("itemCount").setValue(itemCount)
-        FirebaseDatabase.getInstance().getReference("Admins").child("ProductType/${product.productType}/${product.productRandomId}").child("itemCount").setValue(itemCount)
+    fun updateItemCount(product: Product, itemCount: Int) {
+        val db = FirebaseDatabase.getInstance().getReference("Admins")
+        val updates = mapOf(
+            "AllProducts/${product.productRandomId}/itemCount" to itemCount,
+            "ProductCategory/${product.productCategory}/${product.productRandomId}/itemCount" to itemCount,
+            "ProductType/${product.productType}/${product.productRandomId}/itemCount" to itemCount
+        )
+        db.updateChildren(updates)
     }
 
-    fun saveUserAddress(address: String){
-        FirebaseDatabase.getInstance().getReference("AllUsers").child("Users").child(Utils.getCurrentUserId()).child("userAddress").setValue(address)
+    fun saveProductsAfterOrder(stock: Int, product: CartProducts) {
+        val db = FirebaseDatabase.getInstance().getReference("Admins")
+        val updates = mapOf(
+            "AllProducts/${product.productId}/itemCount" to 0,
+            "ProductCategory/${product.productCategory}/${product.productId}/itemCount" to 0,
+            "AllProducts/${product.productId}/productStock" to stock,
+            "ProductCategory/${product.productCategory}/${product.productId}/productStock" to stock
+        )
+        db.updateChildren(updates)
     }
 
+    fun saveUserAddress(address: String) {
+        FirebaseDatabase.getInstance().getReference("AllUsers/Users/${Utils.getCurrentUserId()}/userAddress").setValue(address)
+    }
 
+    fun getUserAddress(callback: (String?) -> Unit) {
+        val db = FirebaseDatabase.getInstance().getReference("AllUsers/Users/${Utils.getCurrentUserId()}/userAddress")
+        db.addListenerForSingleValueEvent(object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                callback(snapshot.getValue(String::class.java))
+            }
 
-    // sharePreferences
-    fun savingCartItemCount(itemCount : Int){
+            override fun onCancelled(error: DatabaseError) {
+                callback(null)
+            }
+        })
+    }
+
+    fun saveOrderedProducts(orders: Orders) {
+        FirebaseDatabase.getInstance().getReference("Admins/Orders/${orders.orderId}").setValue(orders)
+    }
+
+    // SharedPreferences
+    fun savingCartItemCount(itemCount: Int) {
         sharedPreferences.edit().putInt("itemCount", itemCount).apply()
     }
-    fun fetchTotalCartItemCount() : MutableLiveData<Int>{
+
+    fun fetchTotalCartItemCount(): LiveData<Int> {
         val totalItemCount = MutableLiveData<Int>()
         totalItemCount.value = sharedPreferences.getInt("itemCount", 0)
         return totalItemCount
     }
 
-    fun saveAddressStatus(){
+    fun saveAddressStatus() {
         sharedPreferences.edit().putBoolean("addressStatus", true).apply()
     }
 
-    fun getAddressStatus() : MutableLiveData<Boolean>{
+    fun getAddressStatus(): LiveData<Boolean> {
         val status = MutableLiveData<Boolean>()
         status.value = sharedPreferences.getBoolean("addressStatus", false)
         return status
     }
-
-
 }

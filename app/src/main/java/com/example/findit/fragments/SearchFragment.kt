@@ -180,7 +180,9 @@ class SearchFragment : Fragment() {
             productStock = product.productStock,
             productImage = product.productImageUris?.get(0)!!,
             productCategory = product.productCategory,
-            adminUid = product.adminUid
+            adminUid = product.adminUid,
+//            productType = product.productType
+
         )
         lifecycleScope.launch {
             viewModel.insertCartProduct(cartProduct)
